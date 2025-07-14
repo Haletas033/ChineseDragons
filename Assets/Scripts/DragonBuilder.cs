@@ -1,9 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Unity.VisualScripting;
 using UnityEngine;
 
-public class LóngBuilder : MonoBehaviour
+public class DragonBuilder : MonoBehaviour
 {
     
     public MeshFilter meshFilter;
@@ -13,13 +14,27 @@ public class LóngBuilder : MonoBehaviour
     public int points = 10;
     public int segments = 10;
     
+    public float amplitude = .1f;
+    public float frequency = .1f;
+
+    public float segmentSpacing = 1f;
+    private float _phase = 0f;
+
+    private Mesh _mesh;
     
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
-        Mesh mesh = new Mesh();
-        meshFilter.mesh = mesh;
-        
+        _mesh = new Mesh();
+        meshFilter.mesh = _mesh;
+    }
+    
+    void OnValidate() {
+        if (Application.isPlaying) return;
+        GenerateMesh();
+    }
+
+    void GenerateMesh()
+    {
         Vector3[] vertices = new Vector3[points * segments];
         
         
@@ -30,22 +45,27 @@ public class LóngBuilder : MonoBehaviour
             // Angle around the torus
             float segmentAngle = 2 * Mathf.PI * j / segments;
             
-            //Segment follow a circular path making a torus
+            //Segment follow an animated sine wave
             
-            // Center of this circle on the torus
-            Vector3 center = new Vector3(
-                R * Mathf.Cos(segmentAngle),
-                R * Mathf.Sin(segmentAngle),
-                0);
+            // Center of the segment on the sine wave
+            float x = j * segmentSpacing;
+            float y = amplitude * Mathf.Sin(frequency * x + _phase);
+            float z = 0;
 
-            // Tangent vector of the torus at this segment
-            Vector3 tangent = new Vector3(
-                -Mathf.Sin(segmentAngle),
-                Mathf.Cos(segmentAngle),
-                0);
+            Vector3 center = new Vector3(x, y, z);
+
+
+            // Tangent vector of the tsine wave at this segment
+            float delta = 0.01f; // small step for derivative approx
+
+            float y1 = amplitude * Mathf.Sin(frequency * (x + delta) + _phase);
+            Vector3 pointAhead = new Vector3(x + delta, y1, z);
+
+            Vector3 tangent = (pointAhead - center).normalized;
+
 
             // Normal and binormal vectors forming the circle's plane
-            Vector3 normal = Vector3.forward; // Fixed axis perpendicular to the torus plane
+            Vector3 normal = Vector3.forward; // Fixed axis perpendicular to the sine wave plane
             Vector3 binormal = Vector3.Cross(tangent, normal);
 
             for (int i = 0; i < points; i++)
@@ -63,7 +83,8 @@ public class LóngBuilder : MonoBehaviour
         int t = 0; // index for triangle array
 
         for (int seg = 0; seg < segments; seg++) {
-            int nextSeg = (seg + 1) % segments; // Wrap around
+            if (seg == segments - 1) break;
+            int nextSeg = seg + 1;
 
             for (int i = 0; i < points; i++)
             {
@@ -82,14 +103,14 @@ public class LóngBuilder : MonoBehaviour
             }
         }
 
-        mesh.vertices = vertices;
-        mesh.triangles = triangles;
-        mesh.RecalculateNormals();
+        _mesh.vertices = vertices;
+        _mesh.triangles = triangles;
+        _mesh.RecalculateNormals();
     }
 
-    // Update is called once per frame
     void Update()
     {
-        
+        _phase += Time.deltaTime;
+        GenerateMesh();
     }
 }
