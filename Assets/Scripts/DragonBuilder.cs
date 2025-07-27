@@ -1,10 +1,8 @@
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 public class DragonBuilder : MonoBehaviour
 {
-    
     public MeshFilter meshFilter;
 
     public float r = 1f; //Radius of circle
@@ -24,19 +22,41 @@ public class DragonBuilder : MonoBehaviour
 
     private Mesh _mesh;
     
+    void Reset()
+    {
+        if (meshFilter == null)
+            meshFilter = GetComponent<MeshFilter>();
+
+        if (_mesh == null)
+            _mesh = new Mesh();
+
+        if (meshFilter != null && meshFilter.sharedMesh != _mesh)
+            meshFilter.sharedMesh = _mesh;
+    }
+
     void Start()
     {
-        _mesh = new Mesh();
-        meshFilter.mesh = _mesh;
+        if (_mesh == null)
+            _mesh = new Mesh();
+
+        if (meshFilter != null && meshFilter.mesh != _mesh)
+            meshFilter.mesh = _mesh;
     }
-    
-    void OnValidate() {
+
+    void OnValidate()
+    {
         if (Application.isPlaying) return;
+
+        if (_mesh == null)
+            return;
+
         GenerateMesh();
     }
 
     void GenerateMesh()
     {
+        _mesh.Clear();
+        
         List<float> tubeAngles = new List<float>();
 
         for (int i = 0; i < points; i++)
@@ -92,6 +112,7 @@ public class DragonBuilder : MonoBehaviour
             for (int i = 0; i < tubeAngles.Count; i++)
             {
                 float radius = (i == 1) ? r * 2 : r;
+                radius -= (radius - 0.5f) / (segments - 1) * j;
 
                 float angle = tubeAngles[i];
                 // Position vertex on the circle, oriented perpendicular to tangent
