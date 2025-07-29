@@ -80,6 +80,11 @@ public class DragonBuilder : MonoBehaviour
         Vector3[] normals = new Vector3[vertices.Length];
         
         int[] triangles = new int[segments  * _ringPoints * 6];
+        
+        Vector3 lastCenter = Vector3.zero;
+        Vector3 lastTangent = Vector3.forward;
+        
+        float lastRadius = r;
 
         for (int j = 0; j < segments; j++)
         { 
@@ -100,6 +105,12 @@ public class DragonBuilder : MonoBehaviour
             Vector3 pointAhead = new Vector3(x + delta, y1, z);
 
             Vector3 tangent = (pointAhead - center).normalized;
+            
+            if (j == segments - 1)
+            {
+                lastCenter = center;
+                lastTangent = tangent;
+            }
 
 
             // Normal and binormal vectors forming the circle's plane
@@ -107,12 +118,15 @@ public class DragonBuilder : MonoBehaviour
             Vector3 binormal = Vector3.Cross(normal, tangent).normalized;
             normal = Vector3.Cross(tangent, binormal).normalized;
 
- 
-
             for (int i = 0; i < tubeAngles.Count; i++)
             {
                 float radius = (i == 1) ? r * 2 : r;
                 radius -= (radius - 0.5f) / (segments - 1) * j;
+
+                if (i == tubeAngles.Count - 1)
+                {
+                    lastRadius = radius;
+                }
 
                 float angle = tubeAngles[i];
                 // Position vertex on the circle, oriented perpendicular to tangent
@@ -148,6 +162,8 @@ public class DragonBuilder : MonoBehaviour
                 triangles[t++] = bNext;
             }
         }
+        
+        GenerateTail(ref vertices, ref normals, ref triangles, lastCenter, lastTangent, tubeAngles, lastRadius);
 
         _mesh.vertices = vertices;
         _mesh.triangles = triangles;
@@ -158,5 +174,77 @@ public class DragonBuilder : MonoBehaviour
     {
         _phase += Time.deltaTime;
         GenerateMesh();
+    }
+
+    void GenerateTail(ref Vector3[] vertices, ref Vector3[] normals, ref int[] triangles, Vector3 center, Vector3 tangent, List<float> tubeAngles, float lastRadius)
+    {
+        Vector3[] tailVerts = new Vector3[_ringPoints * 5 + 1];
+        Vector3[] tailNormals = new Vector3[tailVerts.Length];
+        int[] tailTriangles = new int[tailVerts.Length * 6];
+        
+        for (int j = 0; j < 5; j++)
+        {
+            Vector3 normal = Vector3.up;
+            Vector3 binormal = Vector3.Cross(normal, tangent).normalized;
+            normal = Vector3.Cross(tangent, binormal).normalized;
+
+            float phi = (j / 5f) * Mathf.PI * 0.5f;
+
+            float radius = lastRadius * Mathf.Cos(phi);
+            Vector3 ringCenter = center + tangent * (lastRadius * Mathf.Sin(phi));
+            
+            for (int i = 0; i < tubeAngles.Count; i++)
+            {
+                float angle = tubeAngles[i];
+                // Position vertex on the circle, oriented perpendicular to tangent
+                tailVerts[j * _ringPoints + i] = ringCenter
+                                                + radius * Mathf.Cos(angle) * normal
+                                                + radius * Mathf.Sin(angle) * binormal;
+                
+                // Calculate normals for each vertex
+                tailNormals[j * _ringPoints + i] = (Mathf.Cos(angle) * normal + Mathf.Sin(angle) * binormal).normalized;
+            }
+        }
+        
+        int t = 0; // index for triangle array
+
+        for (int seg = 0; seg < 5; seg++) {
+            if (seg == 5 - 1) break;
+            int nextSeg = seg + 1;
+
+            for (int i = 0; i < _ringPoints; i++)
+            {
+                int a = seg * _ringPoints + i;
+                int b = seg * _ringPoints + (i + 1) % _ringPoints;
+                int aNext = nextSeg * _ringPoints + i;
+                int bNext = nextSeg * _ringPoints + (i + 1) % _ringPoints;
+
+                tailTriangles[t++] = a;
+                tailTriangles[t++] = aNext;
+                tailTriangles[t++] = b;
+
+                tailTriangles[t++] = b;
+                tailTriangles[t++] = aNext;
+                tailTriangles[t++] = bNext;
+            }
+        }
+
+        int oldVertCount = vertices.Length;
+        int oldTriCount = triangles.Length;
+        
+        System.Array.Resize(ref vertices, oldVertCount + tailVerts.Length);
+        System.Array.Resize(ref normals, normals.Length + tailNormals.Length);
+        System.Array.Resize(ref triangles, oldTriCount + tailTriangles.Length);
+        
+        for (int i = 0; i < tailVerts.Length; i++)
+        {
+            vertices[oldVertCount + i] = tailVerts[i];
+            normals[oldVertCount + i] = tailNormals[i];
+        }
+        
+        for (int i = 0; i < tailTriangles.Length; i++)
+        {
+            triangles[oldTriCount + i] = tailTriangles[i] + oldVertCount;
+        }
     }
 }
