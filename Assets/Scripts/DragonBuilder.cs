@@ -5,7 +5,7 @@ public class DragonBuilder : MonoBehaviour
 {
     public MeshFilter meshFilter;
 
-    public float r = 1f; //Radius of circle
+    public float radius = 1f; //Radius of circle
     public int points = 10;
     public int segments = 10;
     
@@ -16,42 +16,22 @@ public class DragonBuilder : MonoBehaviour
 
     public float spineWidth = .01f;
     
-    private float _phase = 0f;
+    private float _phase;
 
     private int _ringPoints;
 
     private Mesh _mesh;
-    
-    void Reset()
-    {
-        if (meshFilter == null)
-            meshFilter = GetComponent<MeshFilter>();
 
-        if (_mesh == null)
-            _mesh = new Mesh();
-
-        if (meshFilter != null && meshFilter.sharedMesh != _mesh)
-            meshFilter.sharedMesh = _mesh;
-    }
-
-    void Start()
+    void EnsureMesh()
     {
         if (_mesh == null)
             _mesh = new Mesh();
-
         if (meshFilter != null && meshFilter.mesh != _mesh)
             meshFilter.mesh = _mesh;
     }
 
-    void OnValidate()
-    {
-        if (Application.isPlaying) return;
-
-        if (_mesh == null)
-            return;
-
-        GenerateMesh();
-    }
+    void Start() => EnsureMesh();
+    void OnValidate() { if (!Application.isPlaying) EnsureMesh(); }
 
     void GenerateMesh()
     {
@@ -84,27 +64,13 @@ public class DragonBuilder : MonoBehaviour
         Vector3 lastCenter = Vector3.zero;
         Vector3 lastTangent = Vector3.forward;
         
-        float lastRadius = r;
+        float lastRadius = radius;
 
         for (int j = 0; j < segments; j++)
         { 
             // Segment follows an animated sine wave
             
-            // Center of the segment on the sine wave
-            float x = j * segmentSpacing;
-            float y = amplitude * Mathf.Sin(frequency * x + _phase);
-            float z = 0;
-
-            Vector3 center = new Vector3(x, y, z);
-
-
-            // Tangent vector of the tsine wave at this segment
-            float delta = 0.01f; // small step for derivative approx
-
-            float y1 = amplitude * Mathf.Sin(frequency * (x + delta) + _phase);
-            Vector3 pointAhead = new Vector3(x + delta, y1, z);
-
-            Vector3 tangent = (pointAhead - center).normalized;
+            GetFrame(j * segmentSpacing, out var center, out var normal, out var binormal, out var tangent);
             
             if (j == segments - 1)
             {
@@ -112,55 +78,26 @@ public class DragonBuilder : MonoBehaviour
                 lastTangent = tangent;
             }
 
-
-            // Normal and binormal vectors forming the circle's plane
-            Vector3 normal = Vector3.up;
-            Vector3 binormal = Vector3.Cross(normal, tangent).normalized;
-            normal = Vector3.Cross(tangent, binormal).normalized;
-
             for (int i = 0; i < tubeAngles.Count; i++)
             {
-                float radius = (i == 1) ? r * 2 : r;
-                radius -= (radius - 0.5f) / (segments - 1) * j;
+                float currentRadius = (i == 1) ? radius * 2 : radius;
+                currentRadius -= (currentRadius - 0.5f) / (segments - 1) * j;
 
                 if (i == tubeAngles.Count - 1)
                 {
-                    lastRadius = radius;
+                    lastRadius = currentRadius;
                 }
 
-                float angle = tubeAngles[i];
-                // Position vertex on the circle, oriented perpendicular to tangent
-                vertices[j * _ringPoints + i] = center
-                                           + radius * Mathf.Cos(angle) * normal
-                                           + radius * Mathf.Sin(angle) * binormal;
-                
-                // Calculate normals for each vertex
-                normals[j * _ringPoints + i] = (Mathf.Cos(angle) * normal + Mathf.Sin(angle) * binormal).normalized;
+                CreateRing(tubeAngles, vertices, normals, normal, binormal, center, currentRadius, i, j);
             }
         }
-        
         
         int t = 0; // index for triangle array
 
         for (int seg = 0; seg < segments; seg++) {
             if (seg == segments - 1) break;
-            int nextSeg = seg + 1;
-
-            for (int i = 0; i < _ringPoints; i++)
-            {
-                int a = seg * _ringPoints + i;
-                int b = seg * _ringPoints + (i + 1) % _ringPoints;
-                int aNext = nextSeg * _ringPoints + i;
-                int bNext = nextSeg * _ringPoints + (i + 1) % _ringPoints;
-
-                triangles[t++] = a;
-                triangles[t++] = aNext;
-                triangles[t++] = b;
-
-                triangles[t++] = b;
-                triangles[t++] = aNext;
-                triangles[t++] = bNext;
-            }
+            
+            CreateSegmentTriangles(triangles, seg, ref t);
         }
         
         GenerateTail(ref vertices, ref normals, ref triangles, lastCenter, lastTangent, tubeAngles, lastRadius);
@@ -182,33 +119,23 @@ public class DragonBuilder : MonoBehaviour
         Vector3[] tailNormals = new Vector3[tailVerts.Length];
         int[] tailTriangles = new int[tailVerts.Length * 6];
         
-        float phi;
-        
         for (int j = 0; j < 5; j++)
         {
             Vector3 normal = Vector3.up;
             Vector3 binormal = Vector3.Cross(normal, tangent).normalized;
             normal = Vector3.Cross(tangent, binormal).normalized;
 
-             phi = (j / 5f) * Mathf.PI * 0.5f;
+            float phi = (j / 5f) * Mathf.PI * 0.5f;
 
-            float radius = lastRadius * Mathf.Cos(phi);
+            float currentRadius = lastRadius * Mathf.Cos(phi);
             Vector3 ringCenter = center + tangent * (lastRadius * Mathf.Sin(phi));
             
             for (int i = 0; i < tubeAngles.Count; i++)
             {
-                float angle = tubeAngles[i];
-                // Position vertex on the circle, oriented perpendicular to tangent
-                tailVerts[j * _ringPoints + i] = ringCenter
-                                                + radius * Mathf.Cos(angle) * normal
-                                                + radius * Mathf.Sin(angle) * binormal;
-                
-                // Calculate normals for each vertex
-                tailNormals[j * _ringPoints + i] = (Mathf.Cos(angle) * normal + Mathf.Sin(angle) * binormal).normalized;
+                CreateRing(tubeAngles, tailVerts, tailNormals, normal, binormal, ringCenter, currentRadius, i, j);
             }
         }
-
-        phi = Mathf.PI * -.5f;
+        
         tailVerts[tailVerts.Length - 1] = center + tangent * lastRadius;
         tailNormals[tailVerts.Length - 1] = tangent;
 
@@ -230,23 +157,9 @@ public class DragonBuilder : MonoBehaviour
 
                 break;
             }
-            int nextSeg = seg + 1;
-
-            for (int i = 0; i < _ringPoints; i++)
-            {
-                int a = seg * _ringPoints + i;
-                int b = seg * _ringPoints + (i + 1) % _ringPoints;
-                int aNext = nextSeg * _ringPoints + i;
-                int bNext = nextSeg * _ringPoints + (i + 1) % _ringPoints;
-
-                tailTriangles[t++] = a;
-                tailTriangles[t++] = aNext;
-                tailTriangles[t++] = b;
-
-                tailTriangles[t++] = b;
-                tailTriangles[t++] = aNext;
-                tailTriangles[t++] = bNext;
-            }
+            
+            CreateSegmentTriangles(tailTriangles, seg, ref t);
+            
         }
 
         int oldVertCount = vertices.Length;
@@ -266,5 +179,61 @@ public class DragonBuilder : MonoBehaviour
         {
             triangles[oldTriCount + i] = tailTriangles[i] + oldVertCount;
         }
+    }
+
+    private void CreateSegmentTriangles(int[] triangles, int seg, ref int t)
+    {
+        int nextSeg = seg + 1;
+
+        for (int i = 0; i < _ringPoints; i++)
+        {
+            int a = seg * _ringPoints + i;
+            int b = seg * _ringPoints + (i + 1) % _ringPoints;
+            int aNext = nextSeg * _ringPoints + i;
+            int bNext = nextSeg * _ringPoints + (i + 1) % _ringPoints;
+
+            triangles[t++] = a;
+            triangles[t++] = aNext;
+            triangles[t++] = b;
+
+            triangles[t++] = b;
+            triangles[t++] = aNext;
+            triangles[t++] = bNext;
+        }
+    }
+
+    private void CreateRing(List<float>tubeAngles, Vector3[] vertices, Vector3[] normals,
+        Vector3 normal, Vector3 binormal, Vector3 center,
+        float currentRadius, int i, int j)
+    {
+        float angle = tubeAngles[i];
+        // Position vertex on the circle, oriented perpendicular to tangent
+        vertices[j * _ringPoints + i] = center
+                                        + currentRadius * Mathf.Cos(angle) * normal
+                                        + currentRadius * Mathf.Sin(angle) * binormal;
+                
+        // Calculate normals for each vertex
+        normals[j * _ringPoints + i] = (Mathf.Cos(angle) * normal + Mathf.Sin(angle) * binormal).normalized;
+    }
+    
+    private void GetFrame(float x, out Vector3 center, out Vector3 normal, out Vector3 binormal, out Vector3 tangent)
+    {
+        float y = amplitude * Mathf.Sin(frequency * x + _phase);
+        float z = 0;
+    
+        center = new Vector3(x, y, z);
+    
+        // Tangent vector of the tsine wave at this segment
+        float delta = 0.01f; // small step for derivative approx
+    
+        float y1 = amplitude * Mathf.Sin(frequency * (x + delta) + _phase);
+        Vector3 pointAhead = new Vector3(x + delta, y1, z);
+    
+        tangent = (pointAhead - center).normalized;
+    
+        // Normal and binormal vectors forming the circle's plane
+        normal = Vector3.up;
+        binormal = Vector3.Cross(normal, tangent).normalized;
+        normal = Vector3.Cross(tangent, binormal).normalized;
     }
 }
