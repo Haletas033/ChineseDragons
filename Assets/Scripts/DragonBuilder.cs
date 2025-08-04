@@ -182,13 +182,15 @@ public class DragonBuilder : MonoBehaviour
         Vector3[] tailNormals = new Vector3[tailVerts.Length];
         int[] tailTriangles = new int[tailVerts.Length * 6];
         
+        float phi;
+        
         for (int j = 0; j < 5; j++)
         {
             Vector3 normal = Vector3.up;
             Vector3 binormal = Vector3.Cross(normal, tangent).normalized;
             normal = Vector3.Cross(tangent, binormal).normalized;
 
-            float phi = (j / 5f) * Mathf.PI * 0.5f;
+             phi = (j / 5f) * Mathf.PI * 0.5f;
 
             float radius = lastRadius * Mathf.Cos(phi);
             Vector3 ringCenter = center + tangent * (lastRadius * Mathf.Sin(phi));
@@ -205,11 +207,29 @@ public class DragonBuilder : MonoBehaviour
                 tailNormals[j * _ringPoints + i] = (Mathf.Cos(angle) * normal + Mathf.Sin(angle) * binormal).normalized;
             }
         }
+
+        phi = Mathf.PI * -.5f;
+        tailVerts[tailVerts.Length - 1] = center + tangent * lastRadius;
+        tailNormals[tailVerts.Length - 1] = tangent;
+
         
         int t = 0; // index for triangle array
 
         for (int seg = 0; seg < 5; seg++) {
-            if (seg == 5 - 1) break;
+            if (seg == 5 - 1)
+            {
+                for (int i = 0; i < _ringPoints; i++)
+                {
+                    int a = seg * _ringPoints + i;
+                    int b = seg * _ringPoints + (i + 1) % _ringPoints;
+                    
+                    tailTriangles[t++] = a;
+                    tailTriangles[t++] = tailVerts.Length - 1;
+                    tailTriangles[t++] = b;
+                }
+
+                break;
+            }
             int nextSeg = seg + 1;
 
             for (int i = 0; i < _ringPoints; i++)
