@@ -71,11 +71,13 @@ public class DragonBuilder : MonoBehaviour
 
         _ringPoints = tubeAngles.Count;
         
-        Vector3[] vertices = new Vector3[_ringPoints * _segments];
-        
-        Vector3[] normals = new Vector3[vertices.Length];
-        
-        int[] triangles = new int[_segments  * _ringPoints * 6];
+        int totalRings = _segments + TailSegments;
+        int totalVertices = totalRings * _ringPoints + 1;
+
+        List<Vector3> vertices = new List<Vector3>(new Vector3[totalVertices]);
+        List<Vector3> normals  = new List<Vector3>(new Vector3[totalVertices]);
+        List<int> triangles = new List<int>();
+
         
         Vector3 lastCenter = Vector3.zero;
         Vector3 lastTangent = Vector3.forward;
@@ -104,23 +106,21 @@ public class DragonBuilder : MonoBehaviour
                     lastRadius = currentRadius;
                 }
 
-                CreateRing(tubeAngles, vertices, normals, normal, binormal, center, currentRadius, pointIndex, segment);
+                CreateRing(tubeAngles, vertices, normals, normal, binormal, center, currentRadius, pointIndex, segment, 0);
             }
         }
-        
-        int triangleIndex = 0; // index for triangle array
 
         for (int segmentIndex = 0; segmentIndex < _segments; segmentIndex++) {
             if (segmentIndex == _segments - 1) break;
             
-            CreateSegmentTriangles(triangles, segmentIndex, ref triangleIndex);
+            CreateSegmentTriangles(triangles, segmentIndex);
         }
         
         GenerateTail(ref vertices, ref normals, ref triangles, lastCenter, lastTangent, tubeAngles, lastRadius);
 
-        _mesh.vertices = vertices;
-        _mesh.triangles = triangles;
-        _mesh.normals = normals;
+        _mesh.vertices = vertices.ToArray();
+        _mesh.triangles = triangles.ToArray();
+        _mesh.normals = normals.ToArray();
     }
 
     void LateUpdate()
@@ -129,12 +129,8 @@ public class DragonBuilder : MonoBehaviour
         GenerateMesh();
     }
 
-    void GenerateTail(ref Vector3[] vertices, ref Vector3[] normals, ref int[] triangles, Vector3 center, Vector3 tangent, List<float> tubeAngles, float lastRadius)
+    void GenerateTail(ref List<Vector3> vertices, ref List<Vector3> normals, ref List<int> triangles, Vector3 center, Vector3 tangent, List<float> tubeAngles, float lastRadius)
     {
-        Vector3[] tailVerts = new Vector3[_ringPoints * 5 + 1];
-        Vector3[] tailNormals = new Vector3[tailVerts.Length];
-        int[] tailTriangles = new int[tailVerts.Length * 6];
-        
         for (int segment = 0; segment < TailSegments; segment++)
         {
             Vector3 normal = Vector3.up;
@@ -149,56 +145,40 @@ public class DragonBuilder : MonoBehaviour
             
             for (int pointIndex = 0; pointIndex < tubeAngles.Count; pointIndex++)
             {
-                CreateRing(tubeAngles, tailVerts, tailNormals, normal, binormal, ringCenter, currentRadius, pointIndex, segment);
+                CreateRing(tubeAngles, vertices, normals, normal, binormal, ringCenter, currentRadius, pointIndex, segment, (_segments * _ringPoints));
             }
         }
         
-        tailVerts[tailVerts.Length - 1] = center + tangent * lastRadius;
-        tailNormals[tailVerts.Length - 1] = tangent;
-
+        vertices.Add(center + tangent * lastRadius);
+        normals.Add(tangent);
         
-        int triangleIndex = 0; // index for triangle array
+        int centerIndex = vertices.Count - 1;
+
+        int tailSegmentOffset = _segments;
 
         for (int segmentIndex = 0; segmentIndex < TailSegments; segmentIndex++) {
+            int seg = tailSegmentOffset + segmentIndex;
+
             if (segmentIndex == TailSegments - 1)
             {
                 for (int i = 0; i < _ringPoints; i++)
                 {
-                    int a = segmentIndex * _ringPoints + i;
-                    int b = segmentIndex * _ringPoints + (i + 1) % _ringPoints;
-                    
-                    tailTriangles[triangleIndex++] = a;
-                    tailTriangles[triangleIndex++] = tailVerts.Length - 1;
-                    tailTriangles[triangleIndex++] = b;
-                }
+                    int a = seg * _ringPoints + i;
+                    int b = seg * _ringPoints + (i + 1) % _ringPoints;
 
+                    triangles.Add(a);
+                    triangles.Add(centerIndex);
+                    triangles.Add(b);
+                }
                 break;
             }
-            
-            CreateSegmentTriangles(tailTriangles, segmentIndex, ref triangleIndex);
-            
+
+            CreateSegmentTriangles(triangles, seg);
         }
 
-        int oldVertCount = vertices.Length;
-        int oldTriCount = triangles.Length;
-        
-        System.Array.Resize(ref vertices, oldVertCount + tailVerts.Length);
-        System.Array.Resize(ref normals, normals.Length + tailNormals.Length);
-        System.Array.Resize(ref triangles, oldTriCount + tailTriangles.Length);
-        
-        for (int i = 0; i < tailVerts.Length; i++)
-        {
-            vertices[oldVertCount + i] = tailVerts[i];
-            normals[oldVertCount + i] = tailNormals[i];
-        }
-        
-        for (int i = 0; i < tailTriangles.Length; i++)
-        {
-            triangles[oldTriCount + i] = tailTriangles[i] + oldVertCount;
-        }
     }
 
-    private void CreateSegmentTriangles(int[] triangles, int segmentIndex, ref int triangleIndex)
+    private void CreateSegmentTriangles(List<int> triangles, int segmentIndex)
     {
         int nextSeg = segmentIndex + 1;
 
@@ -209,28 +189,30 @@ public class DragonBuilder : MonoBehaviour
             int aNext = nextSeg * _ringPoints + pointIndex;
             int bNext = nextSeg * _ringPoints + (pointIndex + 1) % _ringPoints;
 
-            triangles[triangleIndex++] = a;
-            triangles[triangleIndex++] = aNext;
-            triangles[triangleIndex++] = b;
+            triangles.Add(a);
+            triangles.Add(aNext);
+            triangles.Add(b);
 
-            triangles[triangleIndex++] = b;
-            triangles[triangleIndex++] = aNext;
-            triangles[triangleIndex++] = bNext;
+            triangles.Add(b);
+            triangles.Add(aNext);
+            triangles.Add(bNext);
         }
     }
 
-    private void CreateRing(List<float>tubeAngles, Vector3[] vertices, Vector3[] normals,
+    private void CreateRing(List<float> tubeAngles, List<Vector3> vertices, List<Vector3> normals,
         Vector3 normal, Vector3 binormal, Vector3 center,
-        float currentRadius, int pointIndex, int segment)
+        float currentRadius, int pointIndex, int segment, int vertexOffset)
     {
         float angle = tubeAngles[pointIndex];
         // Position vertex on the circle, oriented perpendicular to tangent
-        vertices[segment * _ringPoints + pointIndex] = center
-                                        + currentRadius * Mathf.Cos(angle) * normal
-                                        + currentRadius * Mathf.Sin(angle) * binormal;
-                
-        // Calculate normals for each vertex
-        normals[segment * _ringPoints + pointIndex] = (Mathf.Cos(angle) * normal + Mathf.Sin(angle) * binormal).normalized;
+        
+        int index = vertexOffset + segment * _ringPoints + pointIndex;
+
+        vertices[index] = center
+                         + currentRadius * Mathf.Cos(angle) * normal
+                         + currentRadius * Mathf.Sin(angle) * binormal;
+
+        normals[index] = (Mathf.Cos(angle) * normal + Mathf.Sin(angle) * binormal).normalized;
     }
     
     private void GetFrame(float x, out Vector3 center, out Vector3 normal, out Vector3 binormal, out Vector3 tangent)
